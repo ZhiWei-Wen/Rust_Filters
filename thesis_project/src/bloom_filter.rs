@@ -2,7 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::f64;
 use rand;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // Define the BloomFilter struct
 pub struct BloomFilter {
@@ -13,11 +13,11 @@ pub struct BloomFilter {
 
 impl BloomFilter {
     // Initialize a new BloomFilter with a target false positive rate
-    fn new(expected_items: usize) -> BloomFilter {
+    fn new(expected_item_size: usize) -> BloomFilter {
         // Calculate the size of the bit vector (m) and the number of hash functions (k)
         let false_positive_rate: f64=0.0074;
-        let size = (-1f64 * (expected_items as f64) * false_positive_rate.ln() / f64::ln(2f64).powi(2)).ceil() as usize;// This is 'm', the size of the bit array
-        let num_hashes = ((size as f64 / expected_items as f64) * f64::ln(2f64)).ceil() as usize;// This is 'k', the number of hash functions
+        let size = (-1f64 * (expected_item_size as f64) * false_positive_rate.ln() / f64::ln(2f64).powi(2)).ceil() as usize;// This is 'm', the size of the bit array
+        let num_hashes = ((size as f64 / expected_item_size as f64) * f64::ln(2f64)).ceil() as usize;// This is 'k', the number of hash functions
         let seeds = (0..num_hashes).map(|_| rand::random::<u64>() | 1).collect(); // Ensure seeds are odd
         BloomFilter {
             bit_vec: vec![false; size],
@@ -34,7 +34,7 @@ impl BloomFilter {
         (((seed.wrapping_mul(hash)) >> 32) % self.size as u64) as usize
         //multiply-shift. better distribution to avoid collision.
         // size is not pow of two may lead to un-uniform, but it's the sacrifice to take so that for 1000000 items we don't need 1048576 bits when we have 7 hash functions to achieve 0.007 fpr.
-        // real result is 0.0005 more.
+        // the real result is 0.0005 more.
     }
 
     // Add an item to the Bloom filter
@@ -58,7 +58,25 @@ impl BloomFilter {
 
 }
 
+// The test only works for adding natural numbers from 1 to expected_items for simplicity. 
+// Test logic needs to be changed if user wants to check for adding different kinds of numbers.
+
+fn compute_mean_and_variance(times: &[Duration]) -> (f64, f64) {
+    let times_in_secs: Vec<f64> = times.iter()
+        .map(|d| d.as_secs_f64())
+        .collect();
+
+    let mean = times_in_secs.iter().sum::<f64>() / times_in_secs.len() as f64;
+
+    let variance = times_in_secs.iter()
+        .map(|time| (time - mean).powi(2))
+        .sum::<f64>() / times_in_secs.len() as f64;
+
+    (mean, variance)
+}
+
 fn test_bloom_f_with_specified_num_of_items(expected_items: usize){
+    //carry out a single test
     let expected_items = expected_items;
     let mut filter = BloomFilter::new(expected_items);
     let bits_per_item=filter.size as f64/expected_items as f64;
@@ -88,6 +106,45 @@ fn test_bloom_f_with_specified_num_of_items(expected_items: usize){
     let bloom_tpr= bloom_f_true_positive_num as f64/expected_items as f64;
     println!("Bloom Filter True Positive Rate is ({:?} items) : {:?}",expected_items,bloom_tpr);
     println!("Bloom Filter query Duration per item for {:?} pos items: {:?}",expected_items,bloom_f_pos_query_duration/expected_items as u32);
+    
+    //carry out several tests for benchmark
+    let test_num = 1000;
+    let mut construct_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut pos_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut neg_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let expected_items = 1_000;
+
+    for _ in 0..test_num{
+        
+        let mut filter = BloomFilter::new(expected_items);
+        let bloom_f_insertion_start_time = Instant::now();
+        for item in 1..=expected_items{
+            filter.add(&item);
+        }//insert items
+        let bloom_f_insertion_duration = bloom_f_insertion_start_time.elapsed();
+        construct_times.push(bloom_f_insertion_duration);
+
+        let bloom_f_neg_query_start_time = Instant::now();
+        for item in expected_items+1..=expected_items+expected_items{
+            filter.contains(&item);
+        }
+        let bloom_f_neg_query_duration = bloom_f_neg_query_start_time.elapsed();
+        neg_check_times.push(bloom_f_neg_query_duration);
+
+        let bloom_f_pos_query_start_time = Instant::now();
+        for item in 1..=expected_items{
+            filter.contains(&item);
+        }
+        let bloom_f_pos_query_duration = bloom_f_pos_query_start_time.elapsed();
+        pos_check_times.push(bloom_f_pos_query_duration);
+    }
+    let (construct_mean, construct_variance) = compute_mean_and_variance(&construct_times);
+    let (neg_check_mean, neg_check_variance) = compute_mean_and_variance(&neg_check_times);
+    let (pos_check_mean, pos_check_variance) = compute_mean_and_variance(&pos_check_times);
+
+    println!("Construction for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, construct_mean, construct_variance);
+    println!("Negative Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, neg_check_mean, neg_check_variance);
+    println!("Positive Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, pos_check_mean, pos_check_variance);
 }
 
 pub fn test_bloom_filters(){
