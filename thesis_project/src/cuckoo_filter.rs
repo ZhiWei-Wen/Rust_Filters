@@ -109,23 +109,30 @@ impl CuckooFilter {
     }
 }
 
-const SIZE:usize = 262144; //needs to be power of 2.
-const ITEM_NUM: i32 = 996147; //change this accordingly. load_factor is 0.95.
+
+// test the cuckoo filter.
+
+// change SIZE of the cuckoo filter according to ITEM_NUM. 
+// SIZE needs to be power of 2. load_factor is in this case is specifically designed as 0.95.
+const ITEM_NUM: i32 = 996147;
+const SIZE:usize = 262144;
+
 
 pub fn test_cuckoo_filters() {
     let mut filter = CuckooFilter::new(SIZE); // Adjust size as needed. power of 2.
-    let cuckoo_f_insertion_start_time = Instant::now();
     let bits_per_item = (filter.size*BUCKET_SIZE*FINGERPRINT_SIZE) as f64 /ITEM_NUM as f64;
     println!("Cuckoo theoretical bit/item is {:?}", bits_per_item);
+    
+    //insertion check
+    let cuckoo_f_insertion_start_time = Instant::now();
     //load factor set to 0.95.
     for i in 1..=ITEM_NUM {
         filter.insert(&i);
     }
-
     let cuckoo_f_insertion_duration = cuckoo_f_insertion_start_time.elapsed();
-
     println!("Cuckoo Filter Construction Time per item for {:?} items: {:?}",ITEM_NUM,cuckoo_f_insertion_duration/ITEM_NUM as u32);
 
+    //membership query for inserted items
     let cuckoo_f_lookup_start_time = Instant::now();
     let mut tp_num = 0;
     for i in 1..=ITEM_NUM {
@@ -137,8 +144,10 @@ pub fn test_cuckoo_filters() {
     let tpr = (tp_num/ITEM_NUM) as f64;
     println!("Cuckoo Filter lookup time per item for {:?} inserted items: {:?}", ITEM_NUM,cuckoo_f_lookup_duration/ITEM_NUM as u32);
     println!("Cuckoo Filter TPR is {:?}",tpr);
-    let cuckoo_f_lookup_start_time_false = Instant::now();
+    
+    //membership query for non-inserted items
     let mut fp_num = 0;
+    let cuckoo_f_lookup_start_time_false = Instant::now();
     for i in ITEM_NUM+1..=2*ITEM_NUM{
         if filter.lookup(&i){fp_num+=1;}
     }
@@ -146,19 +155,23 @@ pub fn test_cuckoo_filters() {
     let fpr = fp_num as f64/ITEM_NUM as f64;
     println!("Cuckoo Filter lookup time per item for {:?} non-inserted items: {:?}", ITEM_NUM,cuckoo_f_lookup_duration_false/ITEM_NUM as u32);
     println!("Cuckoo Filter FPR is {:?}",fpr);
+    
+    //deletion time
     let cuckoo_f_delete_start_time = Instant::now();
     for i in 1..=ITEM_NUM{
         filter.delete(&i);
     }
     let cuckoo_f_delete_duration = cuckoo_f_delete_start_time.elapsed();
     println!("Cuckoo Filter deletion time per item for {:?} items: {:?}",ITEM_NUM,cuckoo_f_delete_duration/ ITEM_NUM as u32);
+    
+    //check if deletion is successful. deleted item should be definitely not in the filter.
     let mut fp2_num = 0;
     for i in 1..=ITEM_NUM{
         if filter.lookup(&i){fp2_num+=1;}
     }
     let fpr2 = fp2_num as f64/ITEM_NUM as f64;
     if fpr2==0f64{
-        println!("Cuckoo fpr on inserted items after deletion: {:?}, items deleted successfully", fpr2)
+        println!("Cuckoo fpr on inserted items after deletion: {:?}", fpr2)
     }
 
 }

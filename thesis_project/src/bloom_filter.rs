@@ -59,7 +59,9 @@ impl BloomFilter {
 }
 
 // The test only works for adding natural numbers from 1 to expected_items for simplicity. 
-// Test logic needs to be changed if user wants to check for adding different kinds of numbers.
+// The test logic needs to be changed if user wants to check for adding different kinds of numbers.
+// Items of different types should be stored before inserting and should be hashable (or using rust 
+// to implement the Hash property).
 
 fn compute_mean_and_variance(times: &[Duration]) -> (f64, f64) {
     let times_in_secs: Vec<f64> = times.iter()
@@ -80,7 +82,7 @@ fn test_bloom_f_with_specified_num_of_items(expected_items: usize){
     let expected_items = expected_items;
     let mut filter = BloomFilter::new(expected_items);
     let bits_per_item=filter.size as f64/expected_items as f64;
-    println!("Bloom filter theoretical space: bit/item is {:?}", bits_per_item);
+    println!("Bloom filter space usage: bit/item is {:?}", bits_per_item);
     let bloom_f_insertion_start_time = Instant::now();
     for item in 1..=expected_items{
         filter.add(&item);
@@ -108,11 +110,11 @@ fn test_bloom_f_with_specified_num_of_items(expected_items: usize){
     println!("Bloom Filter query Duration per item for {:?} pos items: {:?}",expected_items,bloom_f_pos_query_duration/expected_items as u32);
     
     //carry out several tests for benchmark
-    let test_num = 1000;
+    let test_num = 20;
     let mut construct_times: Vec<Duration> = Vec::with_capacity(test_num);
     let mut pos_check_times: Vec<Duration> = Vec::with_capacity(test_num);
     let mut neg_check_times: Vec<Duration> = Vec::with_capacity(test_num);
-    let expected_items = 1_000;
+    let expected_items = 996147;
 
     for _ in 0..test_num{
         
@@ -142,9 +144,9 @@ fn test_bloom_f_with_specified_num_of_items(expected_items: usize){
     let (neg_check_mean, neg_check_variance) = compute_mean_and_variance(&neg_check_times);
     let (pos_check_mean, pos_check_variance) = compute_mean_and_variance(&pos_check_times);
 
-    println!("Construction for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, construct_mean, construct_variance);
-    println!("Negative Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, neg_check_mean, neg_check_variance);
-    println!("Positive Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, pos_check_mean, pos_check_variance);
+    println!("BF: Construction for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, construct_mean, construct_variance);
+    println!("BF: Negative Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, neg_check_mean, neg_check_variance);
+    println!("BF: Positive Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, pos_check_mean, pos_check_variance);
 }
 
 pub fn test_bloom_filters(){

@@ -1,6 +1,6 @@
 use std::hash::{Hash,Hasher};
 use std::collections::hash_map::DefaultHasher;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 
 const CACHE_LINE_SIZE_BITS: usize = 1024;// 128 bytes M1 Macbook * 8 bits per byte
@@ -67,11 +67,30 @@ impl BlockedBloomFilter {
 
 }
 
+//The test only works for adding natural numbers from 1 to expected_items for simplicity. 
+// Test logic needs to be changed if user wants to check for adding different kinds of numbers.
+
+fn compute_mean_and_variance(times: &[Duration]) -> (f64, f64) {
+    let times_in_secs: Vec<f64> = times.iter()
+        .map(|d| d.as_secs_f64())
+        .collect();
+
+    let mean = times_in_secs.iter().sum::<f64>() / times_in_secs.len() as f64;
+
+    let variance = times_in_secs.iter()
+        .map(|time| (time - mean).powi(2))
+        .sum::<f64>() / times_in_secs.len() as f64;
+
+    (mean, variance)
+}
 fn test_blocked_bloom_f_with_specified_num_of_items(expected_items: usize){
+    
+    //carry out single test
+    
     let expected_items = expected_items;
     let mut filter = BlockedBloomFilter::new(expected_items);
     let bits_per_item=filter.total_size as f64/expected_items as f64;
-    println!("Blocked Bloom filter theoretical bit/item is {:?}", bits_per_item);
+    println!("Blocked Bloom filter storage used bit/item is {:?}", bits_per_item);
     let blocked_bloom_f_insertion_start_time = Instant::now();
     for item in 1..=expected_items{
         filter.add(&item);
@@ -97,8 +116,51 @@ fn test_blocked_bloom_f_with_specified_num_of_items(expected_items: usize){
     let bloom_tpr= bloom_f_true_positive_num as f64/expected_items as f64;
     println!("Blocked Bloom Filter True Positive Rate is ({:?} items) : {:?}",expected_items,bloom_tpr);
     println!("Blocked Bloom Filter query Duration per item for {:?} positive items: {:?}",expected_items,blocked_bloom_f_pos_query_duration/expected_items as u32);
-}
+    
+    //carry out benchmark test for several runs.
+    let test_num = 20;
+    let mut construct_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut pos_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut neg_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    
+    for _ in 0..test_num{
+        let mut filter = BlockedBloomFilter::new(expected_items);
+        
+        //time the construction
+        let blocked_bloom_f_insertion_start_time = Instant::now();
+        for item in 1..=expected_items{
+            filter.add(&item);
+        }//insert items
+        let blocked_bloom_f_insertion_duration = blocked_bloom_f_insertion_start_time.elapsed();
+        construct_times.push(blocked_bloom_f_insertion_duration);
+        
+        //time the lookup time for items not plugged in.
+        let blocked_bloom_f_neg_query_start_time = Instant::now();
+        for item in expected_items+1..=expected_items+expected_items{
+            filter.check(&item);
+        }
+        let blocked_bloom_f_neg_query_duration = blocked_bloom_f_neg_query_start_time.elapsed();
+        neg_check_times.push(blocked_bloom_f_neg_query_duration);
+        
+        //time the lookup time for items plugged in.
+        let blocked_bloom_f_pos_query_start_time = Instant::now();
+        for item in 1..=expected_items{
+            if filter.check(&item){bloom_f_true_positive_num+=1;}
+        }
+        let blocked_bloom_f_pos_query_duration = blocked_bloom_f_pos_query_start_time.elapsed();
+        pos_check_times.push(blocked_bloom_f_pos_query_duration);
+    }
+    let (construct_mean, construct_variance) = compute_mean_and_variance(&construct_times);
+    let (neg_check_mean, neg_check_variance) = compute_mean_and_variance(&neg_check_times);
+    let (pos_check_mean, pos_check_variance) = compute_mean_and_variance(&pos_check_times);
+
+    println!("BBF: Construction for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, construct_mean, construct_variance);
+    println!("BBF: Negative Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, neg_check_mean, neg_check_variance);
+    println!("BBF: Positive Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", expected_items, pos_check_mean, pos_check_variance);
+
+}   
 
 pub fn test_blocked_bloom_filters(){
     test_blocked_bloom_f_with_specified_num_of_items(996147);
+    // match the item number with number of items used in cuckoo filter.
 }

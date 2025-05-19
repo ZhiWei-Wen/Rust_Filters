@@ -13,9 +13,9 @@ mod binary_fuse_filter;
 
 
 fn main() {
-    test_bloom_filters();
+    //test_bloom_filters();
     //test_blocked_bloom_filters();
-    //test_cuckoo_filters();
+    test_cuckoo_filters();
     //test_xor_filters();
     //test_bff();
 }
