@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use rand::Rng;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::collections::VecDeque;
 
 struct BFFilter {
@@ -18,7 +18,7 @@ impl BFFilter {
         let mut s = DefaultHasher::new();
         x.hash(&mut s);
         let hash_value = s.finish();
-        let mask = (1 << 7) - 1; // for 7-bit fingerprints aiming for 0.0078 fpr. however theoretical bit/item is the same as 8 bit fingerprint due to datatype.
+        let mask = (1 << 7) - 1; // For 7-bit fingerprints aiming for 0.0078 fpr. However, theoretical bit/item is the same as 8 bit fingerprint due to datatype.
         ((hash_value >> (64 - 7)) & mask) as u8
     }
 
@@ -122,15 +122,30 @@ impl BFFilter {
             if success {
                 filter.assign(stack);
                 return filter;
-            }//average retry times more than xor, so more "worse" case can happen. average construction time increases.
+            }//Average retry times more than xor, so more "worse" case can happen. Average construction time increases.
             // If not successful, loop will continue and try with new seeds
         }
     }
 }
 
+fn compute_mean_and_variance(times: &[Duration]) -> (f64, f64) {
+    let times_in_secs: Vec<f64> = times.iter()
+        .map(|d| d.as_secs_f64())
+        .collect();
+
+    let mean = times_in_secs.iter().sum::<f64>() / times_in_secs.len() as f64;
+
+    let variance = times_in_secs.iter()
+        .map(|time| (time - mean).powi(2))
+        .sum::<f64>() / times_in_secs.len() as f64;
+
+    (mean, variance)
+}
+
 pub fn test_bff(){
-    let mut pos_keys: Vec<u32> = (1..=1000000).collect();
-    let neg_keys: Vec<u32> = (1000001..=2000000).collect();
+    //run a single test
+    let mut pos_keys: Vec<u32> = (1..=996147).collect();
+    let neg_keys: Vec<u32> = (996147..=1992296).collect();
     let pos_key_len = pos_keys.len();
     let neg_key_len = neg_keys.len();
     let xor_construction_start=Instant::now();
@@ -161,4 +176,44 @@ pub fn test_bff(){
     println!("BF True Positive Rate (TPR): {:.6}", tpr);
     println!("BF Filter lookup time per item for {:?} non-inserted items: {:?}", neg_key_len,neg_key_check_duration/neg_key_len as u32);
     println!("BF False Positive Rate (FPR): {:.6}", fpr);
+
+    //run multiple tests
+    let test_num = 20;
+    let mut construct_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut pos_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut neg_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let num_of_keys = 996147;
+    for _ in 0..test_num{
+        //time the construction
+
+        let pos_keys: Vec<u32> = (1..=num_of_keys).collect();
+        let neg_keys: Vec<u32> = (num_of_keys+1..=2*num_of_keys).collect();
+        let bff_construction_start = Instant::now();
+        let filter = BFFilter::new(&pos_keys);
+        let bff_construction_duration = bff_construction_start.elapsed();
+        construct_times.push(bff_construction_duration);
+
+        //time the lookup time for items plugged in.
+        let pos_key_check_start = Instant::now();
+        for key in pos_keys{
+            filter.contains(&key);
+        }
+        let pos_key_check_duration = pos_key_check_start.elapsed();
+        pos_check_times.push(pos_key_check_duration);
+
+        //time the lookup time for items not plugged in.
+        let neg_key_check_start = Instant::now();
+        for item in neg_keys{
+            filter.contains(&item);
+        }
+        let neg_key_check_duration = neg_key_check_start.elapsed();
+        neg_check_times.push(neg_key_check_duration);
+    }
+    let (construct_mean, construct_variance) = compute_mean_and_variance(&construct_times);
+    let (neg_check_mean, neg_check_variance) = compute_mean_and_variance(&neg_check_times);
+    let (pos_check_mean, pos_check_variance) = compute_mean_and_variance(&pos_check_times);
+    println!("BFF: Construction for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", num_of_keys, construct_mean, construct_variance);
+    println!("BFF: Positive Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", num_of_keys, pos_check_mean, pos_check_variance);
+    println!("BFF: Negative Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", num_of_keys, neg_check_mean, neg_check_variance);
+
 }

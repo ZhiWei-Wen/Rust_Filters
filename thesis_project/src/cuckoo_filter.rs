@@ -1,7 +1,7 @@
 use rand::{random, Rng};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const BUCKET_SIZE: usize = 4;
 const FINGERPRINT_SIZE: usize = 10; //reduce the likelihood of collisions. instead of 8.
@@ -38,7 +38,7 @@ impl CuckooFilter {
         item.hash(&mut hasher);
         let hash = hasher.finish();
         (((seed.wrapping_mul(hash)) >> 32) % self.size as u64) as usize//multiply shift
-    }//ensure the output is the same for each key(item) throughout insertion/lookup/deletion.
+    }//Ensure the output is the same for each key(item) throughout insertion/lookup/deletion.
     //This hash function performs better here than in bloom/blocked bloom filters since size is of power of 2.
 
     fn hash1(&self, x: &i32) -> usize {
@@ -112,16 +112,35 @@ impl CuckooFilter {
 
 // test the cuckoo filter.
 
-// change SIZE of the cuckoo filter according to ITEM_NUM. 
-// SIZE needs to be power of 2. load_factor is in this case is specifically designed as 0.95.
-const ITEM_NUM: i32 = 996147;
-const SIZE:usize = 262144;
+
+//The test only works for adding natural numbers from 1 to expected_items for simplicity.
+// Test logic needs to be changed if user wants to check for adding different kinds of numbers.
+
+fn compute_mean_and_variance(times: &[Duration]) -> (f64, f64) {
+    let times_in_secs: Vec<f64> = times.iter()
+        .map(|d| d.as_secs_f64())
+        .collect();
+
+    let mean = times_in_secs.iter().sum::<f64>() / times_in_secs.len() as f64;
+
+    let variance = times_in_secs.iter()
+        .map(|time| (time - mean).powi(2))
+        .sum::<f64>() / times_in_secs.len() as f64;
+
+    (mean, variance)
+}
+
+
 
 
 pub fn test_cuckoo_filters() {
-    let mut filter = CuckooFilter::new(SIZE); // Adjust size as needed. power of 2.
+    // change SIZE of the cuckoo filter according to ITEM_NUM.
+    // SIZE needs to be power of 2. load_factor is in this case is specifically designed as 0.95.
+    const ITEM_NUM: i32 = 996147;
+    const SIZE:usize = 262144;
+    let mut filter = CuckooFilter::new(SIZE); // Adjust size as needed. Power of 2.
     let bits_per_item = (filter.size*BUCKET_SIZE*FINGERPRINT_SIZE) as f64 /ITEM_NUM as f64;
-    println!("Cuckoo theoretical bit/item is {:?}", bits_per_item);
+    println!("Cuckoo bit/item is {:?}", bits_per_item);
     
     //insertion check
     let cuckoo_f_insertion_start_time = Instant::now();
@@ -173,6 +192,53 @@ pub fn test_cuckoo_filters() {
     if fpr2==0f64{
         println!("Cuckoo fpr on inserted items after deletion: {:?}", fpr2)
     }
+    //carry out benchmark test for several runs.
+    let test_num = 20;
+    let mut construct_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut pos_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut neg_check_times: Vec<Duration> = Vec::with_capacity(test_num);
+    let mut deletion_times: Vec<Duration> = Vec::with_capacity(test_num);
+    for _ in 0..test_num{
+        let mut filter = CuckooFilter::new(SIZE); // Adjust size as needed. Power of 2.
+        let cuckoo_f_insertion_start_time = Instant::now();
+        //load factor set to 0.95.
+        for i in 1..=ITEM_NUM {
+            filter.insert(&i);
+        }
+        let cuckoo_f_insertion_duration = cuckoo_f_insertion_start_time.elapsed();
+        construct_times.push(cuckoo_f_insertion_duration);
+        //membership query for inserted items
+        let cuckoo_f_lookup_start_time = Instant::now();
+        let mut tp_num = 0;
+        for i in 1..=ITEM_NUM {
+            if filter.lookup(&i) {
+                tp_num += 1;
+            }
+        }
+        let cuckoo_f_lookup_duration = cuckoo_f_lookup_start_time.elapsed();
+        pos_check_times.push(cuckoo_f_lookup_duration);
+        let cuckoo_f_lookup_start_time_false = Instant::now();
+        for i in ITEM_NUM+1..=2*ITEM_NUM{
+            if filter.lookup(&i){fp_num+=1;}
+        }
+        let cuckoo_f_lookup_duration_false = cuckoo_f_lookup_start_time_false.elapsed();
+        neg_check_times.push(cuckoo_f_lookup_duration_false);
+        let cuckoo_f_delete_start_time = Instant::now();
+        for i in 1..=ITEM_NUM{
+            filter.delete(&i);
+        }
+        let cuckoo_f_delete_duration = cuckoo_f_delete_start_time.elapsed();
+        deletion_times.push(cuckoo_f_delete_duration);
+    }
+    let (construct_mean, construct_variance) = compute_mean_and_variance(&construct_times);
+    let (neg_check_mean, neg_check_variance) = compute_mean_and_variance(&neg_check_times);
+    let (pos_check_mean, pos_check_variance) = compute_mean_and_variance(&pos_check_times);
+    let (del_mean, del_variance) = compute_mean_and_variance(&deletion_times);
+
+    println!("Cuckoo: Construction for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", ITEM_NUM, construct_mean, construct_variance);
+    println!("Cuckoo: Negative Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", ITEM_NUM, neg_check_mean, neg_check_variance);
+    println!("Cuckoo: Positive Check for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", ITEM_NUM, pos_check_mean, pos_check_variance);
+    println!("Cuckoo: deletion for {:?} items in total - Mean: {:.6} sec, Variance: {:.6}", ITEM_NUM, del_mean, del_variance);
 
 }
 
